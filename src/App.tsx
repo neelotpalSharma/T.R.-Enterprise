@@ -40,6 +40,7 @@ const MainAppContent: React.FC = () => {
     settings,
     theme,
     toggleTheme,
+    lowStockCount,
     pendingVerificationEmail
   } = useApp();
 
@@ -299,9 +300,11 @@ const MainAppContent: React.FC = () => {
         >
           <Package className="w-4 h-4" />
           <span>Inventory</span>
-          <span className="absolute -top-1 -right-1.5 px-1 rounded-full text-[9px] font-black bg-blue-600 text-white">
-            4
-          </span>
+          {lowStockCount > 0 && (
+            <span className="absolute -top-1 -right-1.5 min-w-[17px] h-[17px] px-1 rounded-full text-[9px] font-black bg-red-600 text-white flex items-center justify-center ring-1 ring-white dark:ring-slate-900 shadow-xs animate-pulse">
+              {lowStockCount > 99 ? '99+' : lowStockCount}
+            </span>
+          )}
         </button>
 
         <button

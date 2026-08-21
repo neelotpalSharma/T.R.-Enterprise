@@ -13,7 +13,12 @@ import {
   UserCheck,
   LogOut,
   ChevronDown,
-  Store
+  Store,
+  AlertTriangle,
+  ArrowRight,
+  Package,
+  CheckCircle2,
+  X
 } from 'lucide-react';
 import { ActiveTab } from '../types';
 
@@ -49,6 +54,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
+
+  // Critical Low Stock Products list
+  const lowStockItems = products.filter(p => p.quantity <= p.minStockAlert);
 
   // Tab Titles mapping
   const tabTitles: Record<ActiveTab, { title: string; subtitle: string }> = {
@@ -183,17 +192,108 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           <span className={`w-2 h-2 rounded-full ${supabaseConnected ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`} />
         </button>
 
-        {/* Low Stock Notification Trigger */}
-        <button
-          onClick={() => setActiveTab('inventory')}
-          className="relative p-2 rounded-2xl text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
-          title={`${lowStockCount} items low in stock`}
-        >
-          <Bell className="w-4 h-4" />
-          {lowStockCount > 0 && (
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-900" />
+        {/* Low Stock Notification Trigger with Numbers Badge */}
+        <div className="relative">
+          <button
+            onClick={() => setShowNotificationDropdown(!showNotificationDropdown)}
+            className={`relative p-2 rounded-2xl transition-all ${
+              lowStockCount > 0
+                ? 'text-red-600 dark:text-red-400 bg-red-50/90 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/50 border border-red-200 dark:border-red-900/60 shadow-2xs'
+                : 'text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800'
+            }`}
+            title={lowStockCount > 0 ? `${lowStockCount} items low in stock - click to view` : 'No inventory alerts'}
+            aria-label={`${lowStockCount} inventory alerts`}
+          >
+            <Bell className={`w-4 h-4 ${lowStockCount > 0 ? 'animate-bounce' : ''}`} />
+            {lowStockCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] px-1 rounded-full bg-red-600 text-white text-[10px] font-black flex items-center justify-center ring-2 ring-white dark:ring-slate-900 shadow-md shadow-red-600/30">
+                {lowStockCount > 99 ? '99+' : lowStockCount}
+              </span>
+            )}
+          </button>
+
+          {/* Low Stock Notifications Popover Dropdown */}
+          {showNotificationDropdown && (
+            <div
+              className="absolute right-0 mt-2 w-80 sm:w-96 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 shadow-2xl z-50 animate-in fade-in zoom-in-95"
+              onMouseLeave={() => setShowNotificationDropdown(false)}
+            >
+              <div className="flex items-center justify-between pb-2.5 mb-2 border-b border-gray-100 dark:border-slate-800">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-xl bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-400 flex items-center justify-center font-bold">
+                    <AlertTriangle className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-extrabold text-slate-900 dark:text-white">
+                      Inventory Alerts
+                    </h4>
+                    <p className="text-[10px] text-gray-500 dark:text-slate-400">
+                      Real-time stock threshold warnings
+                    </p>
+                  </div>
+                </div>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-red-600 text-white shadow-xs">
+                  {lowStockCount} Low SKU{lowStockCount !== 1 ? 's' : ''}
+                </span>
+              </div>
+
+              {lowStockItems.length === 0 ? (
+                <div className="py-6 text-center text-xs text-gray-500 dark:text-slate-400 space-y-1">
+                  <div className="w-10 h-10 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center mx-auto mb-2">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                  <p className="font-bold text-slate-800 dark:text-slate-200">Inventory Healthy</p>
+                  <p className="text-[11px] text-gray-400">All products are above minimum safety stock limits.</p>
+                </div>
+              ) : (
+                <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                  {lowStockItems.slice(0, 6).map(p => (
+                    <div
+                      key={p.id}
+                      onClick={() => {
+                        setActiveTab('inventory');
+                        setShowNotificationDropdown(false);
+                      }}
+                      className="p-2.5 rounded-xl bg-red-50/60 dark:bg-red-950/30 border border-red-100 dark:border-red-900/50 hover:bg-red-100/80 dark:hover:bg-red-900/40 cursor-pointer transition-colors flex items-center justify-between"
+                    >
+                      <div className="min-w-0 pr-2">
+                        <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                          {p.name}
+                        </p>
+                        <p className="text-[10px] text-gray-500 dark:text-slate-400 truncate">
+                          SKU: <span className="font-mono">{p.sku}</span> {p.packSize ? `• ${p.packSize}` : ''}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-600 text-white text-[10px] font-black">
+                          <span>{p.quantity}</span>
+                          <span className="opacity-80">/ min {p.minStockAlert}</span>
+                        </div>
+                        <p className="text-[9px] font-bold text-red-600 dark:text-red-400 mt-0.5">
+                          {p.quantity === 0 ? 'Out of Stock' : 'Critical Stock'}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="pt-2 mt-2 border-t border-gray-100 dark:border-slate-800 flex items-center justify-between">
+                <button
+                  onClick={() => {
+                    setActiveTab('inventory');
+                    setShowNotificationDropdown(false);
+                  }}
+                  className="w-full py-2 px-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-sm shadow-red-500/25 flex items-center justify-center gap-1.5 transition-all"
+                >
+                  <Package className="w-3.5 h-3.5" />
+                  <span>Manage All {lowStockCount} Low Stock Items</span>
+                  <ArrowRight className="w-3.5 h-3.5 ml-0.5" />
+                </button>
+              </div>
+            </div>
           )}
-        </button>
+        </div>
 
         {/* Theme Toggle */}
         <button

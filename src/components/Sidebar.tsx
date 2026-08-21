@@ -46,12 +46,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
     switchRoleDemo,
     isAdmin,
     supabaseConnected,
+    lowStockCount,
     settings,
     theme,
     toggleTheme
   } = useApp();
 
-  // Explicit menu items as requested
+  // Explicit menu items with dynamic low stock alert counts
   const menuItems = [
     {
       id: 'landing' as ActiveTab,
@@ -69,7 +70,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'inventory' as ActiveTab,
       label: 'Inventory',
       icon: <Package className="w-5 h-5 shrink-0" />,
-      badge: '4' // Exact badge count "4" with blue background as specified
+      badge: lowStockCount > 0 ? String(lowStockCount) : undefined,
+      isAlert: lowStockCount > 0
     },
     {
       id: 'billing' as ActiveTab,
@@ -192,16 +194,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </span>
               )}
 
-              {/* Badge Pill (Inventory has blue pill with count "4") */}
+              {/* Badge Pill (Inventory has alert red pill with actual alert count) */}
               {!collapsed && item.badge && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-600 text-white shadow-xs tracking-tight">
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shadow-xs tracking-tight ${
+                  item.isAlert
+                    ? 'bg-red-600 text-white animate-pulse'
+                    : 'bg-blue-600 text-white'
+                }`}>
                   {item.badge}
                 </span>
               )}
 
-              {/* Collapsed view tooltips badge dot */}
+              {/* Collapsed view tooltips badge - shows number instead of just a dot */}
               {collapsed && item.badge && (
-                <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-blue-600 ring-2 ring-white dark:ring-slate-900" />
+                <span className={`absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-[9px] font-black flex items-center justify-center ring-2 ring-white dark:ring-slate-900 shadow-xs ${
+                  item.isAlert
+                    ? 'bg-red-600 text-white animate-pulse'
+                    : 'bg-blue-600 text-white'
+                }`}>
+                  {item.badge}
+                </span>
               )}
             </button>
           );
