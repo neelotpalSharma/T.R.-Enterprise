@@ -24,10 +24,13 @@ import {
   KeyRound,
   UserX,
   Lock,
-  Unlock
+  Unlock,
+  Globe,
+  Key,
+  UploadCloud
 } from 'lucide-react';
 import { Role } from '../types';
-import { SUPABASE_SQL_SCHEMA, testSupabaseConnection } from '../lib/supabase';
+import { SUPABASE_SQL_SCHEMA, testSupabaseConnection, resetSupabaseClient, getSupabaseEnv } from '../lib/supabase';
 
 interface SettingsViewProps {
   onOpenSupabaseModal: () => void;
@@ -66,9 +69,62 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenSupabaseModal 
   const [showConfirmDeleteModal, setShowConfirmDeleteModal] = useState(false);
   const [isTogglingLock, setIsTogglingLock] = useState(false);
 
+  // Supabase inline configuration states
+  const [sbUrl, setSbUrl] = useState(() => getSupabaseEnv().url);
+  const [sbKey, setSbKey] = useState(() => getSupabaseEnv().anonKey);
+  const [isTestingSb, setIsTestingSb] = useState(false);
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
+  const [sbTestResult, setSbTestResult] = useState<{ success: boolean; message: string; tablesExist?: boolean } | null>(null);
+
   useEffect(() => {
     setFormData(settings);
   }, [settings]);
+
+  useEffect(() => {
+    const env = getSupabaseEnv();
+    setSbUrl(env.url);
+    setSbKey(env.anonKey);
+  }, [activeTab]);
+
+  const handleSaveSupabaseConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sbUrl.trim() || !sbKey.trim()) {
+      showToast('Please enter both Supabase URL and Anon API Key', 'warning');
+      return;
+    }
+
+    const saved = resetSupabaseClient(sbUrl.trim(), sbKey.trim());
+    if (!saved) {
+      showToast('Failed to save Supabase keys', 'error');
+      return;
+    }
+
+    setIsTestingSb(true);
+    const res = await testSupabaseConnection();
+    setIsTestingSb(false);
+    setSbTestResult(res);
+
+    if (res.success) {
+      showToast('Connected to Supabase successfully!', 'success');
+      await syncWithSupabase();
+    } else {
+      showToast(res.message, 'warning');
+    }
+  };
+
+  const handleDisconnectSupabase = () => {
+    resetSupabaseClient();
+    setSbUrl('');
+    setSbKey('');
+    setSbTestResult(null);
+    showToast('Supabase disconnected. Switched to local storage.', 'info');
+  };
+
+  const handleTriggerManualSync = async () => {
+    setIsManualSyncing(true);
+    await syncWithSupabase();
+    setIsManualSyncing(false);
+  };
 
   // Handle store profile update
   const handleSaveProfile = (e: React.FormEvent) => {
@@ -932,69 +988,179 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenSupabaseModal 
 
       {/* 4. Supabase Cloud Database */}
       {activeTab === 'supabase' && (
-        <div className="p-6 rounded-[28px] border border-gray-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm space-y-5">
+        <div className="p-6 rounded-[28px] border border-gray-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm space-y-6">
+          
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 className="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-                <Database className="w-5 h-5 text-blue-600" />
-                <span>Supabase PostgreSQL Integration</span>
+                <Database className="w-5 h-5 text-emerald-600" />
+                <span>Supabase PostgreSQL Cloud Integration</span>
               </h3>
-              <p className="text-xs text-gray-500">
-                Cloud persistence for Berger Paints catalog, invoices, and stock movements
+              <p className="text-xs text-gray-500 dark:text-slate-400">
+                Persistent cloud storage for Berger Paints catalog, sales invoices, user sessions & stock logs
               </p>
             </div>
 
             <div className="flex items-center gap-2">
               <button
-                onClick={syncWithSupabase}
-                className="flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+                type="button"
+                onClick={handleTriggerManualSync}
+                disabled={isManualSyncing}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-colors"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${isCheckingSupabase ? 'animate-spin' : ''}`} />
-                <span>Sync Cloud Tables</span>
+                <RefreshCw className={`w-3.5 h-3.5 ${isManualSyncing ? 'animate-spin' : ''}`} />
+                <span>{isManualSyncing ? 'Syncing...' : 'Sync Cloud Tables'}</span>
               </button>
               <button
+                type="button"
                 onClick={onOpenSupabaseModal}
-                className="px-4 py-2.5 rounded-2xl text-xs font-bold bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 text-slate-800 dark:text-slate-200"
+                className="px-4 py-2 rounded-2xl text-xs font-bold bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 transition-colors"
               >
-                Configure Keys
+                Setup Wizard
               </button>
             </div>
           </div>
 
-          <div className={`p-4 rounded-2xl border flex items-center gap-3 text-xs ${
+          {/* Connection Status Banner */}
+          <div className={`p-4 rounded-2xl border flex items-start sm:items-center gap-3 text-xs ${
             supabaseConnected
               ? 'bg-emerald-50 text-emerald-950 border-emerald-200 dark:bg-emerald-950/60 dark:border-emerald-800 dark:text-emerald-200'
               : 'bg-amber-50 text-amber-950 border-amber-200 dark:bg-amber-950/60 dark:border-amber-800 dark:text-amber-200'
           }`}>
-            <CheckCircle2 className={`w-5 h-5 shrink-0 ${supabaseConnected ? 'text-emerald-600' : 'text-amber-600'}`} />
-            <div>
-              <p className="font-bold">
-                {supabaseConnected ? 'Supabase Database Connected & Operational' : 'Supabase Running in Local Hybrid Mode'}
+            <CheckCircle2 className={`w-5 h-5 shrink-0 ${supabaseConnected ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`} />
+            <div className="flex-1">
+              <p className="font-extrabold text-sm">
+                {supabaseConnected ? 'Supabase Database Connected & Operational' : 'Supabase Running in Local Offline Mode'}
               </p>
               <p className="opacity-80 mt-0.5">
                 {supabaseConnected
-                  ? 'All products and invoices are actively synchronizing with your Supabase cloud PostgreSQL tables.'
-                  : 'To link a live Supabase project, execute the SQL schema below in your Supabase SQL Editor and add your project URL.'}
+                  ? 'All products, inventory adjustments, and invoices are actively synchronizing with your Supabase cloud PostgreSQL tables.'
+                  : 'To link your live Supabase project, execute the SQL schema below in your Supabase SQL Editor and enter your project URL and public Anon key below.'}
               </p>
             </div>
+          </div>
+
+          {/* Inline Credentials Form */}
+          <div className="p-5 rounded-2xl bg-gray-50/80 dark:bg-slate-800/40 border border-gray-200/80 dark:border-slate-800 space-y-4">
+            <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-900 dark:text-white flex items-center justify-between">
+              <span>Cloud API Credentials</span>
+              <a
+                href="https://supabase.com/dashboard"
+                target="_blank"
+                rel="noreferrer"
+                className="text-emerald-600 dark:text-emerald-400 normal-case font-bold inline-flex items-center gap-1 hover:underline text-[11px]"
+              >
+                <span>Supabase Dashboard</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </h4>
+
+            <form onSubmit={handleSaveSupabaseConfig} className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 dark:text-slate-300 mb-1">
+                    Supabase Project URL
+                  </label>
+                  <div className="relative">
+                    <Globe className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="https://xyzcompany.supabase.co"
+                      value={sbUrl}
+                      onChange={(e) => setSbUrl(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 dark:text-slate-300 mb-1">
+                    Supabase Anon Public Key
+                  </label>
+                  <div className="relative">
+                    <Key className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="password"
+                      placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                      value={sbKey}
+                      onChange={(e) => setSbKey(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {sbTestResult && (
+                <div className={`p-3 rounded-xl border flex items-start gap-2 text-xs ${
+                  sbTestResult.success
+                    ? 'bg-emerald-50 text-emerald-950 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-200 dark:border-emerald-800'
+                    : 'bg-amber-50 text-amber-950 border-amber-200 dark:bg-amber-950/60 dark:text-amber-200 dark:border-amber-800'
+                }`}>
+                  {sbTestResult.success ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  )}
+                  <div>
+                    <p className="font-bold">{sbTestResult.message}</p>
+                    {sbTestResult.tablesExist === false && (
+                      <button
+                        type="button"
+                        onClick={handleCopySchema}
+                        className="text-xs font-bold underline text-emerald-700 dark:text-emerald-300 mt-1 block"
+                      >
+                        Copy SQL script below and execute in Supabase SQL Editor
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <div>
+                  {(sbUrl || sbKey) && (
+                    <button
+                      type="button"
+                      onClick={handleDisconnectSupabase}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Disconnect Cloud</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="submit"
+                    disabled={isTestingSb}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-500/20 active:scale-95 transition-all"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isTestingSb ? 'animate-spin' : ''}`} />
+                    <span>{isTestingSb ? 'Testing Link...' : 'Save & Test Supabase'}</span>
+                  </button>
+                </div>
+              </div>
+            </form>
           </div>
 
           {/* SQL Schema Preview */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-extrabold uppercase tracking-wider text-slate-900 dark:text-slate-300">
-                Supabase Schema SQL Migration Script:
+                Supabase Schema SQL Migration Script (Run in SQL Editor):
               </span>
               <button
+                type="button"
                 onClick={handleCopySchema}
-                className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700"
+                className="flex items-center gap-1 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline"
               >
                 <Copy className="w-3.5 h-3.5" />
                 <span>Copy SQL Script</span>
               </button>
             </div>
 
-            <pre className="p-4 rounded-2xl bg-slate-950 text-slate-300 font-mono text-[11px] overflow-x-auto max-h-60 border border-slate-800 leading-relaxed">
+            <pre className="p-4 rounded-2xl bg-slate-950 text-slate-300 font-mono text-[11px] overflow-x-auto max-h-60 border border-slate-800 leading-relaxed select-all">
               {SUPABASE_SQL_SCHEMA}
             </pre>
           </div>

@@ -1,10 +1,18 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 // Read from env or localStorage if user configured dynamically in app settings
-const getSupabaseEnv = () => {
+export const getSupabaseEnv = () => {
   const metaEnv = (import.meta as unknown as { env?: Record<string, string> }).env || {};
-  const url = metaEnv.VITE_SUPABASE_URL || localStorage.getItem('tr_supabase_url') || '';
-  const anonKey = metaEnv.VITE_SUPABASE_ANON_KEY || localStorage.getItem('tr_supabase_anon_key') || '';
+  const url =
+    metaEnv.VITE_SUPABASE_URL ||
+    localStorage.getItem('tr_supabase_url') ||
+    localStorage.getItem('supabase_url') ||
+    '';
+  const anonKey =
+    metaEnv.VITE_SUPABASE_ANON_KEY ||
+    localStorage.getItem('tr_supabase_anon_key') ||
+    localStorage.getItem('supabase_anon_key') ||
+    '';
   return { url: url.trim(), anonKey: anonKey.trim() };
 };
 
@@ -33,24 +41,36 @@ export const getSupabaseClient = (): SupabaseClient | null => {
 
 export const resetSupabaseClient = (url?: string, anonKey?: string) => {
   if (url && anonKey) {
-    localStorage.setItem('tr_supabase_url', url);
-    localStorage.setItem('tr_supabase_anon_key', anonKey);
+    const cleanUrl = url.trim();
+    const cleanKey = anonKey.trim();
+    localStorage.setItem('tr_supabase_url', cleanUrl);
+    localStorage.setItem('tr_supabase_anon_key', cleanKey);
+    localStorage.setItem('supabase_url', cleanUrl);
+    localStorage.setItem('supabase_anon_key', cleanKey);
     try {
-      supabaseInstance = createClient(url, anonKey);
+      supabaseInstance = createClient(cleanUrl, cleanKey, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true
+        }
+      });
       return true;
     } catch (e) {
       console.error(e);
+      supabaseInstance = null;
       return false;
     }
   } else {
     localStorage.removeItem('tr_supabase_url');
     localStorage.removeItem('tr_supabase_anon_key');
+    localStorage.removeItem('supabase_url');
+    localStorage.removeItem('supabase_anon_key');
     supabaseInstance = null;
     return true;
   }
 };
 
-export const testSupabaseConnection = async (): Promise<{ success: boolean; message: string }> => {
+export const testSupabaseConnection = async (): Promise<{ success: boolean; message: string; tablesExist?: boolean }> => {
   const client = getSupabaseClient();
   if (!client) {
     return {
@@ -63,17 +83,22 @@ export const testSupabaseConnection = async (): Promise<{ success: boolean; mess
     const { error } = await client.from('products').select('count', { count: 'exact', head: true });
     if (error) {
       // If table doesn't exist yet, it's connected but schema needs to be run
-      if (error.code === '42P01') {
+      if (error.code === '42P01' || error.message?.includes('does not exist') || error.message?.includes('relation "public.products" does not exist')) {
         return {
           success: true,
-          message: 'Connected to Supabase! (Note: Tables are not yet created. Run the SQL schema provided in Settings).'
+          tablesExist: false,
+          message: 'Connected to Supabase project! (PostgreSQL tables not found yet - copy the SQL schema script below and run it in your Supabase SQL Editor).'
         };
       }
-      return { success: false, message: error.message };
+      return { success: false, message: `Supabase returned: ${error.message}` };
     }
-    return { success: true, message: 'Successfully connected and verified Supabase tables!' };
+    return {
+      success: true,
+      tablesExist: true,
+      message: 'Successfully connected and verified Supabase PostgreSQL cloud tables!'
+    };
   } catch (err: any) {
-    return { success: false, message: err.message || 'Connection failed' };
+    return { success: false, message: err.message || 'Connection failed. Check network or CORS.' };
   }
 };
 
