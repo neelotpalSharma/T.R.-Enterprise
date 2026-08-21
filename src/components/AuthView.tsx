@@ -24,6 +24,8 @@ import {
   Zap,
 } from 'lucide-react';
 import { Role, SentEmailLogItem } from '../types';
+import { SUPABASE_SQL_SCHEMA } from '../lib/supabase';
+import { safeFetchJson } from '../services/authClient';
 
 export interface AuthViewProps {
   initialMode?: 'login' | 'register' | 'verify';
@@ -95,7 +97,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
   // Mailbox Preview & Schema Inspector
   const [showMailboxModal, setShowMailboxModal] = useState(false);
-  const [schemaSql, setSchemaSql] = useState<string>('');
+  const [schemaSql, setSchemaSql] = useState<string>(() => SUPABASE_SQL_SCHEMA || '');
   const [copiedToken, setCopiedToken] = useState(false);
 
   const otpInputsRef = useRef<(HTMLInputElement | null)[]>([]);
@@ -127,12 +129,17 @@ export const AuthView: React.FC<AuthViewProps> = ({
   // Load database schema if requested
   useEffect(() => {
     if (mode === 'schema' && !schemaSql) {
-      fetch('/api/auth/schema')
-        .then(res => res.json())
-        .then(data => {
-          if (data.schema) setSchemaSql(data.schema);
+      safeFetchJson<any>('/api/auth/schema')
+        .then(res => {
+          if (!res.isHtmlOrUnavailable && res.data && res.data.schema) {
+            setSchemaSql(res.data.schema);
+          } else {
+            setSchemaSql(SUPABASE_SQL_SCHEMA);
+          }
         })
-        .catch(() => {});
+        .catch(() => {
+          setSchemaSql(SUPABASE_SQL_SCHEMA);
+        });
     }
   }, [mode, schemaSql]);
 

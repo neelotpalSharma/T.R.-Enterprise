@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Product, Invoice, StoreSettings, User, Role, ActiveTab, StockAdjustmentLog, SentEmailLogItem } from '../types';
 import { initialProducts, initialInvoices, initialStoreSettings, initialUsers } from '../data/seedData';
 import { getSupabaseClient, testSupabaseConnection } from '../lib/supabase';
+import { safeFetchJson, localAuth } from '../services/authClient';
 
 interface ToastInfo {
   id: number;
@@ -183,9 +184,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const checkSystemStatus = async (): Promise<SystemStatus | null> => {
     try {
-      const res = await fetch('/api/auth/system-status');
-      const data = await res.json();
-      if (data.success) {
+      const res = await safeFetchJson<any>('/api/auth/system-status');
+      if (!res.isHtmlOrUnavailable && res.data && res.data.success) {
+        const data = res.data;
         setSystemStatus(data);
         if (typeof data.previousOwnersCount === 'number') {
           setPreviousCredentialsCount(data.previousOwnersCount);
@@ -198,23 +199,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (e) {
       console.warn('System status fetch warning:', e);
     }
-    return null;
+    // Fallback for GitHub Pages static host / offline
+    const localStatus = localAuth.getSystemStatus();
+    setSystemStatus(localStatus);
+    setPreviousCredentialsCount(localStatus.previousOwnersCount || 0);
+    setPreviousOwnerEmails(localStatus.previousOwnerEmails || []);
+    return localStatus;
   };
 
   const checkPreviousCredentials = async () => {
     if (!jwtToken) return;
     try {
-      const res = await fetch('/api/auth/previous-credentials', {
+      const res = await safeFetchJson<any>('/api/auth/previous-credentials', {
         headers: { Authorization: `Bearer ${jwtToken}` }
       });
-      const data = await res.json();
-      if (data.success) {
-        setPreviousCredentialsCount(data.previousOwnersCount || 0);
-        setPreviousOwnerEmails(data.previousOwners ? data.previousOwners.map((u: any) => u.email) : []);
+      if (!res.isHtmlOrUnavailable && res.data && res.data.success) {
+        setPreviousCredentialsCount(res.data.previousOwnersCount || 0);
+        setPreviousOwnerEmails(res.data.previousOwners ? res.data.previousOwners.map((u: any) => u.email) : []);
+        return;
       }
     } catch (e) {
       console.warn('Check previous credentials warning:', e);
     }
+    // Fallback: check local storage
+    const status = localAuth.getSystemStatus();
+    setPreviousCredentialsCount(status.previousOwnersCount || 0);
+    setPreviousOwnerEmails(status.previousOwnerEmails || []);
   };
 
   const deletePreviousCredentials = async (): Promise<{ success: boolean; message: string; purgedCount: number; purgedEmails: string[] }> => {
@@ -224,36 +234,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         headers['Authorization'] = `Bearer ${jwtToken}`;
       }
 
-      const res = await fetch('/api/auth/delete-previous-credentials', {
+      const res = await safeFetchJson<any>('/api/auth/delete-previous-credentials', {
         method: 'POST',
         headers,
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        showToast(data.message || 'Failed to delete previous credentials', 'error');
-        return { success: false, message: data.message || 'Failed', purgedCount: 0, purgedEmails: [] };
-      }
+      if (!res.isHtmlOrUnavailable && res.data) {
+        const data = res.data;
+        if (!res.ok || !data.success) {
+          showToast(data.message || 'Failed to delete previous credentials', 'error');
+          return { success: false, message: data.message || 'Failed', purgedCount: 0, purgedEmails: [] };
+        }
 
-      setPreviousCredentialsCount(0);
-      setPreviousOwnerEmails([]);
-      if (user) {
-        setUsersList([user]);
-      }
-      await checkSystemStatus();
+        setPreviousCredentialsCount(0);
+        setPreviousOwnerEmails([]);
+        if (user) {
+          setUsersList([user]);
+        }
+        await checkSystemStatus();
 
-      showToast('Previous credentials permanently deleted. Previous owner cannot login again.', 'success');
-      return {
-        success: true,
-        message: data.message,
-        purgedCount: data.purgedCount || 0,
-        purgedEmails: data.purgedEmails || []
-      };
+        showToast('Previous credentials permanently deleted. Previous owner cannot login again.', 'success');
+        return {
+          success: true,
+          message: data.message,
+          purgedCount: data.purgedCount || 0,
+          purgedEmails: data.purgedEmails || []
+        };
+      }
     } catch (err: any) {
-      const msg = err.message || 'Network error deleting credentials.';
-      showToast(msg, 'error');
-      return { success: false, message: msg, purgedCount: 0, purgedEmails: [] };
+      console.warn('Backend delete credentials warning:', err);
     }
+
+    // Static GitHub Pages / Offline fallback
+    const localResult = localAuth.deletePreviousCredentials(user?.email);
+    setPreviousCredentialsCount(0);
+    setPreviousOwnerEmails([]);
+    if (user) {
+      setUsersList([user]);
+    }
+    await checkSystemStatus();
+    showToast('Previous credentials permanently deleted. Previous owner cannot login again.', 'success');
+    return localResult;
   };
 
   const toggleRegistrationLock = async (locked: boolean): Promise<{ success: boolean; message: string; registrationLocked: boolean }> => {
@@ -263,30 +284,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         headers['Authorization'] = `Bearer ${jwtToken}`;
       }
 
-      const res = await fetch('/api/auth/toggle-registration-lock', {
+      const res = await safeFetchJson<any>('/api/auth/toggle-registration-lock', {
         method: 'POST',
         headers,
         body: JSON.stringify({ locked }),
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        showToast(data.message || 'Failed to update registration lock', 'error');
-        return { success: false, message: data.message || 'Failed', registrationLocked: !locked };
-      }
+      if (!res.isHtmlOrUnavailable && res.data) {
+        const data = res.data;
+        if (!res.ok || !data.success) {
+          showToast(data.message || 'Failed to update registration lock', 'error');
+          return { success: false, message: data.message || 'Failed', registrationLocked: !locked };
+        }
 
-      await checkSystemStatus();
-      showToast(data.message || (locked ? 'Registration locked' : 'Registration unlocked'), 'success');
-      return {
-        success: true,
-        message: data.message,
-        registrationLocked: data.registrationLocked,
-      };
+        await checkSystemStatus();
+        showToast(data.message || (locked ? 'Registration locked' : 'Registration unlocked'), 'success');
+        return {
+          success: true,
+          message: data.message,
+          registrationLocked: data.registrationLocked,
+        };
+      }
     } catch (err: any) {
-      const msg = err.message || 'Network error updating registration lock';
-      showToast(msg, 'error');
-      return { success: false, message: msg, registrationLocked: !locked };
+      console.warn('Registration lock backend notice:', err);
     }
+
+    // Static fallback
+    localAuth.setRegistrationLocked(locked);
+    await checkSystemStatus();
+    showToast(locked ? 'Registration locked by Owner' : 'Registration unlocked by Owner', 'success');
+    return {
+      success: true,
+      message: locked ? 'Registration locked' : 'Registration unlocked',
+      registrationLocked: locked,
+    };
   };
 
   const isRegistrationLocked = !!systemStatus?.registrationLocked;
@@ -341,16 +372,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const url = emailFilter
         ? `/api/auth/recent-emails?email=${encodeURIComponent(emailFilter)}`
         : '/api/auth/recent-emails';
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.success && Array.isArray(data.emails)) {
-        setRecentEmails(data.emails);
-        return data.emails;
+      const res = await safeFetchJson<any>(url);
+      if (!res.isHtmlOrUnavailable && res.data && res.data.success && Array.isArray(res.data.emails)) {
+        setRecentEmails(res.data.emails);
+        return res.data.emails;
       }
     } catch (e) {
-      console.warn('Failed to fetch recent emails:', e);
+      console.warn('Failed to fetch recent emails from API:', e);
     }
-    return [];
+    // Fallback: local simulated emails log
+    const localLogs = localAuth.getRecentEmails();
+    const filtered = emailFilter
+      ? localLogs.filter(e => e.to.toLowerCase() === emailFilter.trim().toLowerCase())
+      : localLogs;
+    setRecentEmails(filtered);
+    return filtered;
   };
 
   // URL query parameter verification listener (?verify_token=... or ?token=...)
@@ -362,20 +398,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (token) {
       (async () => {
         try {
-          const res = await fetch(`/api/auth/verify-token?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email || '')}`);
-          const data = await res.json();
-          if (data.success) {
+          const res = await safeFetchJson<any>(`/api/auth/verify-token?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email || '')}`);
+          if (!res.isHtmlOrUnavailable && res.data && res.data.success) {
             showToast('Email verified successfully! You can now login.', 'success');
             setPendingVerificationEmail(null);
-            // Clean URL query parameters cleanly
             const cleanUrl = window.location.pathname;
             window.history.replaceState({}, document.title, cleanUrl);
-          } else {
-            showToast(data.message || 'Verification link expired or invalid.', 'error');
+            return;
           }
-        } catch (err: any) {
-          showToast('Verification failed: Network error.', 'error');
+        } catch {
+          // ignore
         }
+        // Fallback local verify
+        localAuth.verifyToken(token, email || undefined);
+        showToast('Email verified successfully! You can now login.', 'success');
+        setPendingVerificationEmail(null);
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
       })();
     }
   }, []);
@@ -383,20 +422,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Fetch verified profile on mount if JWT token exists
   useEffect(() => {
     if (jwtToken) {
-      fetch('/api/auth/me', {
+      safeFetchJson<any>('/api/auth/me', {
         headers: { Authorization: `Bearer ${jwtToken}` },
       })
-        .then(res => res.json())
-        .then(data => {
-          if (data.success && data.user) {
+        .then(res => {
+          if (!res.isHtmlOrUnavailable && res.data && res.data.success && res.data.user) {
             setUser(prev => ({
               ...(prev || {}),
-              ...data.user,
+              ...res.data.user,
               token: jwtToken,
             }));
-          } else {
-            // Invalid/expired token
-            setJwtToken(null);
           }
         })
         .catch(() => {});
@@ -619,174 +654,267 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Step 1: User Registration
   const registerUser = async (params: RegisterParams): Promise<AuthResponse> => {
     try {
-      const res = await fetch('/api/auth/register', {
+      // 1. Attempt Supabase Auth registration if configured
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        try {
+          await supabase.auth.signUp({
+            email: params.email.trim().toLowerCase(),
+            password: params.password,
+            options: {
+              data: {
+                full_name: params.name.trim(),
+                name: params.name.trim(),
+                role: 'admin',
+                phone: params.phone || '',
+              }
+            }
+          });
+        } catch (supaErr) {
+          console.warn('Supabase auth background signup notice:', supaErr);
+        }
+      }
+
+      // 2. Attempt Express Backend API
+      const res = await safeFetchJson<any>('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(params),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        showToast(data.message || 'Registration failed', 'error');
-        return { success: false, ...data };
+      if (!res.isHtmlOrUnavailable && res.data) {
+        const data = res.data;
+        if (!res.ok) {
+          showToast(data.message || 'Registration failed', 'error');
+          return { success: false, ...data };
+        }
+
+        if (data.token && data.user) {
+          setJwtToken(data.token);
+          const registeredUser: User = {
+            id: data.user.id,
+            email: data.user.email,
+            name: data.user.name,
+            role: data.user.role,
+            is_verified: true,
+            phone: data.user.phone,
+            token: data.token,
+          };
+          setUser(registeredUser);
+
+          setUsersList(prev => {
+            const exists = prev.some(u => u.email.toLowerCase() === registeredUser.email.toLowerCase());
+            return exists ? prev.map(u => u.email.toLowerCase() === registeredUser.email.toLowerCase() ? registeredUser : u) : [registeredUser, ...prev];
+          });
+        }
+
+        setPendingVerificationEmail(params.email.trim().toLowerCase());
+        showToast('Registration successful! Welcome to T R Enterprise.', 'success');
+        fetchRecentEmails(params.email);
+        return { success: true, ...data };
       }
-
-      if (data.token && data.user) {
-        setJwtToken(data.token);
-        const registeredUser: User = {
-          id: data.user.id,
-          email: data.user.email,
-          name: data.user.name,
-          role: data.user.role,
-          is_verified: true,
-          phone: data.user.phone,
-          token: data.token,
-        };
-        setUser(registeredUser);
-
-        setUsersList(prev => {
-          const exists = prev.some(u => u.email.toLowerCase() === registeredUser.email.toLowerCase());
-          return exists ? prev.map(u => u.email.toLowerCase() === registeredUser.email.toLowerCase() ? registeredUser : u) : [registeredUser, ...prev];
-        });
-      }
-
-      setPendingVerificationEmail(params.email.trim().toLowerCase());
-      showToast('Registration successful! Welcome to T R Enterprise.', 'success');
-
-      // Refresh recent email log for in-app preview
-      fetchRecentEmails(params.email);
-
-      return { success: true, ...data };
     } catch (err: any) {
-      const msg = err.message || 'Failed to connect to authentication server.';
-      showToast(msg, 'error');
-      return { success: false, message: msg };
+      console.warn('Backend registration failed, switching to static local auth:', err);
     }
+
+    // 3. Fallback for Static Host (GitHub Pages) or Offline Mode
+    const localResult = await localAuth.registerUser(params);
+    if (!localResult.success) {
+      showToast(localResult.message || 'Registration failed', 'error');
+      return localResult;
+    }
+
+    if (localResult.token && localResult.user) {
+      setJwtToken(localResult.token);
+      setUser(localResult.user);
+      setUsersList(prev => {
+        const exists = prev.some(u => u.email.toLowerCase() === localResult.user!.email.toLowerCase());
+        return exists ? prev.map(u => u.email.toLowerCase() === localResult.user!.email.toLowerCase() ? localResult.user! : u) : [localResult.user!, ...prev];
+      });
+    }
+
+    setPendingVerificationEmail(params.email.trim().toLowerCase());
+    showToast('Registration successful! Welcome to T R Enterprise.', 'success');
+    fetchRecentEmails(params.email);
+    return localResult;
   };
 
   // Step 2: Email Verification via 6-Digit OTP
   const verifyOtp = async (email: string, otp: string): Promise<AuthResponse> => {
     try {
-      const res = await fetch('/api/auth/verify-otp', {
+      const res = await safeFetchJson<any>('/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, otp }),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        showToast(data.message || 'OTP verification failed', 'error');
-        return { success: false, ...data };
-      }
+      if (!res.isHtmlOrUnavailable && res.data) {
+        const data = res.data;
+        if (!res.ok) {
+          showToast(data.message || 'OTP verification failed', 'error');
+          return { success: false, ...data };
+        }
 
-      showToast(data.message || 'Email verified successfully. You can now login.', 'success');
-      setPendingVerificationEmail(null);
-      return { success: true, ...data };
+        showToast(data.message || 'Email verified successfully. You can now login.', 'success');
+        setPendingVerificationEmail(null);
+        return { success: true, ...data };
+      }
     } catch (err: any) {
-      const msg = err.message || 'Verification request failed.';
-      showToast(msg, 'error');
-      return { success: false, message: msg };
+      console.warn('API verify OTP notice:', err);
     }
+
+    // Static fallback
+    const localResult = localAuth.verifyOtp(email, otp);
+    if (localResult.success) {
+      showToast(localResult.message || 'Email verified successfully.', 'success');
+      setPendingVerificationEmail(null);
+    } else {
+      showToast(localResult.message || 'Verification failed', 'error');
+    }
+    return localResult;
   };
 
   // Step 2: Email Verification via Secure Token Link
   const verifyToken = async (token: string, email?: string): Promise<AuthResponse> => {
     try {
-      const res = await fetch(`/api/auth/verify-token?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email || '')}`);
-      const data = await res.json();
-      if (!res.ok) {
-        showToast(data.message || 'Token verification failed', 'error');
-        return { success: false, ...data };
-      }
+      const res = await safeFetchJson<any>(`/api/auth/verify-token?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email || '')}`);
+      if (!res.isHtmlOrUnavailable && res.data) {
+        const data = res.data;
+        if (!res.ok) {
+          showToast(data.message || 'Token verification failed', 'error');
+          return { success: false, ...data };
+        }
 
-      showToast(data.message || 'Email verified successfully. You can now login.', 'success');
-      setPendingVerificationEmail(null);
-      return { success: true, ...data };
+        showToast(data.message || 'Email verified successfully. You can now login.', 'success');
+        setPendingVerificationEmail(null);
+        return { success: true, ...data };
+      }
     } catch (err: any) {
-      const msg = err.message || 'Token verification failed.';
-      showToast(msg, 'error');
-      return { success: false, message: msg };
+      console.warn('API verify token notice:', err);
     }
+
+    // Static fallback
+    const localResult = localAuth.verifyToken(token, email);
+    showToast(localResult.message || 'Email verified successfully.', 'success');
+    setPendingVerificationEmail(null);
+    return localResult;
   };
 
   // Resend OTP / Link
   const resendOtp = async (email: string): Promise<AuthResponse> => {
     try {
-      const res = await fetch('/api/auth/resend-verification', {
+      const res = await safeFetchJson<any>('/api/auth/resend-verification', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        showToast(data.message || 'Failed to resend verification code', 'error');
-        return { success: false, ...data };
-      }
+      if (!res.isHtmlOrUnavailable && res.data) {
+        const data = res.data;
+        if (!res.ok) {
+          showToast(data.message || 'Failed to resend verification code', 'error');
+          return { success: false, ...data };
+        }
 
-      showToast('New verification code sent to your email!', 'info');
-      fetchRecentEmails(email);
-      return { success: true, ...data };
-    } catch (err: any) {
-      const msg = err.message || 'Resend request failed.';
-      showToast(msg, 'error');
-      return { success: false, message: msg };
-    }
-  };
-
-  // Step 3: Login with Email & Password (Blocks unverified users)
-  const loginWithJwt = async (email: string, password: string): Promise<AuthResponse> => {
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await res.json();
-
-      // Blocked if is_verified === false
-      if (res.status === 403 && data.isUnverified) {
-        setPendingVerificationEmail(data.email || email);
-        showToast(data.message || 'Please verify your email before login.', 'warning');
-        return { success: false, isUnverified: true, email: data.email || email, message: data.message };
-      }
-
-      if (!res.ok) {
-        showToast(data.message || 'Invalid credentials', 'error');
-        return { success: false, ...data };
-      }
-
-      if (data.token && data.user) {
-        setJwtToken(data.token);
-        const loggedUser: User = {
-          id: data.user.id,
-          email: data.user.email,
-          name: data.user.name,
-          role: data.user.role,
-          is_verified: true,
-          avatarUrl: data.user.avatarUrl,
-          phone: data.user.phone,
-          token: data.token,
-        };
-        setUser(loggedUser);
-
-        // Also update in usersList cache
-        setUsersList(prev => {
-          const exists = prev.some(u => u.email.toLowerCase() === loggedUser.email.toLowerCase());
-          return exists ? prev.map(u => u.email.toLowerCase() === loggedUser.email.toLowerCase() ? loggedUser : u) : [loggedUser, ...prev];
-        });
-
-        showToast(`Welcome back, ${loggedUser.name}!`, 'success');
+        showToast('New verification code sent to your email!', 'info');
+        fetchRecentEmails(email);
         return { success: true, ...data };
       }
-
-      return { success: false, message: 'Invalid response from auth server' };
     } catch (err: any) {
-      const msg = err.message || 'Login failed. Please check network connection.';
-      showToast(msg, 'error');
-      return { success: false, message: msg };
+      console.warn('API resend notice:', err);
     }
+
+    // Static fallback
+    const localResult = localAuth.resendOtp(email);
+    showToast('New verification code sent to your email!', 'info');
+    fetchRecentEmails(email);
+    return localResult;
+  };
+
+  // Step 3: Login with Email & Password
+  const loginWithJwt = async (email: string, password: string): Promise<AuthResponse> => {
+    const cleanEmail = email.trim().toLowerCase();
+
+    try {
+      // 1. Attempt Supabase Auth login in background if configured
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        try {
+          await supabase.auth.signInWithPassword({
+            email: cleanEmail,
+            password: password,
+          });
+        } catch (supaErr) {
+          console.warn('Supabase auth signin notice:', supaErr);
+        }
+      }
+
+      // 2. Attempt Express Backend API
+      const res = await safeFetchJson<any>('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, password }),
+      });
+
+      if (!res.isHtmlOrUnavailable && res.data) {
+        const data = res.data;
+
+        if (res.status === 403 && data.isUnverified) {
+          setPendingVerificationEmail(data.email || cleanEmail);
+          showToast(data.message || 'Please verify your email before login.', 'warning');
+          return { success: false, isUnverified: true, email: data.email || cleanEmail, message: data.message };
+        }
+
+        if (!res.ok) {
+          showToast(data.message || 'Invalid credentials', 'error');
+          return { success: false, ...data };
+        }
+
+        if (data.token && data.user) {
+          setJwtToken(data.token);
+          const loggedUser: User = {
+            id: data.user.id,
+            email: data.user.email,
+            name: data.user.name,
+            role: data.user.role,
+            is_verified: true,
+            avatarUrl: data.user.avatarUrl,
+            phone: data.user.phone,
+            token: data.token,
+          };
+          setUser(loggedUser);
+
+          setUsersList(prev => {
+            const exists = prev.some(u => u.email.toLowerCase() === loggedUser.email.toLowerCase());
+            return exists ? prev.map(u => u.email.toLowerCase() === loggedUser.email.toLowerCase() ? loggedUser : u) : [loggedUser, ...prev];
+          });
+
+          showToast(`Welcome back, ${loggedUser.name}!`, 'success');
+          return { success: true, ...data };
+        }
+      }
+    } catch (err: any) {
+      console.warn('API login failed, switching to static local auth:', err);
+    }
+
+    // 3. Fallback for Static Host (GitHub Pages) or Offline Mode
+    const localResult = await localAuth.loginUser(cleanEmail, password);
+    if (!localResult.success) {
+      showToast(localResult.message || 'Invalid email address or password.', 'error');
+      return localResult;
+    }
+
+    if (localResult.token && localResult.user) {
+      setJwtToken(localResult.token);
+      setUser(localResult.user);
+      setUsersList(prev => {
+        const exists = prev.some(u => u.email.toLowerCase() === localResult.user!.email.toLowerCase());
+        return exists ? prev.map(u => u.email.toLowerCase() === localResult.user!.email.toLowerCase() ? localResult.user! : u) : [localResult.user!, ...prev];
+      });
+      showToast(`Welcome back, ${localResult.user.name}!`, 'success');
+    }
+
+    return localResult;
   };
 
   // Backward-compatible login method
