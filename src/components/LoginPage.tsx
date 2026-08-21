@@ -1,0 +1,342 @@
+import React, { useState } from 'react';
+import { useApp } from '../context/AppContext';
+import {
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  ArrowRight,
+  AlertCircle,
+  Store,
+  RefreshCw,
+  X,
+  Send
+} from 'lucide-react';
+import { getSupabaseClient } from '../lib/supabase';
+
+interface LoginPageProps {
+  onSwitchToRegister: () => void;
+  onLoginSuccess: () => void;
+  onOpenVerificationModal?: (email: string) => void;
+}
+
+export const LoginPage: React.FC<LoginPageProps> = ({
+  onSwitchToRegister,
+  onLoginSuccess,
+  onOpenVerificationModal,
+}) => {
+  const { loginWithJwt, showToast, resendOtp, fetchRecentEmails } = useApp();
+
+  // Minimal form fields
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
+  // States
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isUnverified, setIsUnverified] = useState(false);
+  const [unverifiedEmail, setUnverifiedEmail] = useState('');
+
+  // Forgot password modal
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [isSendingReset, setIsSendingReset] = useState(false);
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage(null);
+    setIsUnverified(false);
+
+    if (!email.trim()) {
+      setErrorMessage('Please enter your email address.');
+      return;
+    }
+
+    if (!password) {
+      setErrorMessage('Please enter your password.');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      // Background Supabase auth login if configured
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        try {
+          await supabase.auth.signInWithPassword({
+            email: email.trim().toLowerCase(),
+            password: password,
+          });
+        } catch (supaErr) {
+          console.warn('Supabase auth signin notice:', supaErr);
+        }
+      }
+
+      const res = await loginWithJwt(email.trim().toLowerCase(), password);
+
+      if (res.success) {
+        showToast('Login successful! Redirecting to Portal Hub...', 'success');
+        onLoginSuccess();
+      } else if (res.isUnverified) {
+        setIsUnverified(true);
+        const blocked = res.email || email.trim().toLowerCase();
+        setUnverifiedEmail(blocked);
+        setErrorMessage('Please verify your email before login.');
+        fetchRecentEmails(blocked);
+      } else {
+        setErrorMessage(res.message || 'Invalid email address or password.');
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Network error during login.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSendPasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotEmail.trim()) return;
+
+    setIsSendingReset(true);
+    setResetMessage(null);
+
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail.trim().toLowerCase() }),
+      });
+      const data = await res.json();
+      setResetMessage(data.message || 'Password reset link sent to your email.');
+      showToast(data.message || 'Password reset instructions dispatched.', 'info');
+    } catch (err: any) {
+      setResetMessage('Failed to send reset link. Please check email and retry.');
+    } finally {
+      setIsSendingReset(false);
+    }
+  };
+
+  const handleResendForUnverified = async () => {
+    if (!unverifiedEmail) return;
+    const res = await resendOtp(unverifiedEmail);
+    if (res.success) {
+      showToast('Verification instructions resent to your email!', 'info');
+      fetchRecentEmails(unverifiedEmail);
+    }
+  };
+
+  return (
+    <div className="w-full max-w-md mx-auto">
+      {/* Brand Logo & Header */}
+      <div className="text-center mb-6">
+        <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-500/25 mb-3">
+          <Store className="w-7 h-7" />
+        </div>
+        <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
+          Sign In to Portal
+        </h1>
+        <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+          T R Enterprise &bull; Berger Paints & Hardware Store
+        </p>
+      </div>
+
+      <div className="bg-white dark:bg-slate-900 border border-gray-200/80 dark:border-slate-800 rounded-[28px] p-6 sm:p-8 shadow-xl shadow-slate-900/5">
+        
+        {/* Error Message Display */}
+        {errorMessage && (
+          <div className="p-3.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 flex items-start gap-2.5 text-xs text-red-700 dark:text-red-300 mb-4 animate-in fade-in">
+            <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <span className="font-bold">{errorMessage}</span>
+              {isUnverified && (
+                <div className="mt-2 pt-2 border-t border-red-200/60 dark:border-red-800/60 flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-red-600 dark:text-red-300">
+                    Account not activated yet.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onOpenVerificationModal) {
+                        onOpenVerificationModal(unverifiedEmail);
+                      } else {
+                        handleResendForUnverified();
+                      }
+                    }}
+                    className="text-[11px] font-bold text-blue-600 dark:text-blue-400 underline hover:text-blue-800"
+                  >
+                    Verify Email Now &rarr;
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          
+          {/* 1. Email Address Field */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              Email Address
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                <Mail className="w-4 h-4" />
+              </div>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="name@store.com"
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-300 dark:border-slate-700 bg-gray-50/50 dark:bg-slate-800/50 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none transition-all"
+                autoComplete="email"
+              />
+            </div>
+          </div>
+
+          {/* 2. Password Field */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                Password
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setForgotEmail(email);
+                  setShowForgotModal(true);
+                }}
+                className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-bold"
+              >
+                Forgot Password?
+              </button>
+            </div>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                <Lock className="w-4 h-4" />
+              </div>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                required
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-gray-300 dark:border-slate-700 bg-gray-50/50 dark:bg-slate-800/50 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none transition-all"
+                autoComplete="current-password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-slate-300"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Submit Button */}
+          <button
+            type="submit"
+            disabled={isLoading || !email.trim() || !password}
+            className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/20 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {isLoading ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <ArrowRight className="w-4 h-4" />
+            )}
+            <span>Sign In & Continue to Portal</span>
+          </button>
+
+          {/* Switch to Register footer */}
+          <div className="text-center pt-3 border-t border-gray-100 dark:border-slate-800">
+            <p className="text-xs text-gray-500 dark:text-slate-400">
+              Don't have an account?{' '}
+              <button
+                type="button"
+                onClick={onSwitchToRegister}
+                className="font-bold text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Create Account (Register)
+              </button>
+            </p>
+          </div>
+
+        </form>
+
+      </div>
+
+      {/* Forgot Password Modal */}
+      {showForgotModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                <Lock className="w-5 h-5 text-blue-600" />
+                <span>Reset Password</span>
+              </h3>
+              <button
+                onClick={() => {
+                  setShowForgotModal(false);
+                  setResetMessage(null);
+                }}
+                className="p-1 rounded-lg text-gray-400 hover:text-slate-900 dark:hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-500 dark:text-slate-400">
+              Enter your registered email address. We'll send you instructions to reset your password.
+            </p>
+
+            {resetMessage && (
+              <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-200">
+                {resetMessage}
+              </div>
+            )}
+
+            <form onSubmit={handleSendPasswordReset} className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={forgotEmail}
+                  onChange={e => setForgotEmail(e.target.value)}
+                  placeholder="name@store.com"
+                  className="w-full py-2.5 px-3.5 rounded-xl border border-gray-300 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowForgotModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSendingReset || !forgotEmail.trim()}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-1.5"
+                >
+                  {isSendingReset ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                  <span>Send Reset Link</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+};

@@ -1,0 +1,6 @@
+{
+  "name": "T R Enterprise - Berger Paints & Hardware Inventory",
+  "description": "Production-ready inventory management, point-of-sale billing, and invoice generation suite for T R Enterprise (Berger Paints & Hardware).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
