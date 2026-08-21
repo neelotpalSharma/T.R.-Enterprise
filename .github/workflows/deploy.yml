@@ -1,0 +1,95 @@
+name: Deploy static content to Pages
+
+
+
+on:
+
+&#x20; push:
+
+&#x20;   branches: \['main', 'master']
+
+&#x20; workflow\_dispatch:
+
+
+
+permissions:
+
+&#x20; contents: read
+
+&#x20; pages: write
+
+&#x20; id-token: write
+
+
+
+concurrency:
+
+&#x20; group: 'pages'
+
+&#x20; cancel-in-progress: true
+
+
+
+jobs:
+
+&#x20; deploy:
+
+&#x20;   environment:
+
+&#x20;     name: github-pages
+
+&#x20;     url: ${{ steps.deployment.outputs.page\_url }}
+
+&#x20;   runs-on: ubuntu-latest
+
+&#x20;   steps:
+
+&#x20;     - name: Checkout
+
+&#x20;       uses: actions/checkout@v4
+
+&#x20;
+
+&#x20;     - name: Set up Node
+
+&#x20;       uses: actions/setup-node@v4
+
+&#x20;       with:
+
+&#x20;         node-version: 24
+
+&#x20;
+
+&#x20;     - name: Install dependencies
+
+&#x20;       run: npm install
+
+&#x20;
+
+&#x20;     - name: Build
+
+&#x20;       run: npm run build
+
+&#x20;
+
+&#x20;     - name: Setup Pages
+
+&#x20;       uses: actions/configure-pages@v5
+
+&#x20;
+
+&#x20;     - name: Upload artifact
+
+&#x20;       uses: actions/upload-pages-artifact@v3
+
+&#x20;       with:
+
+&#x20;         path: './dist'
+
+&#x20;
+
+&#x20;     - name: Deploy to GitHub Pages
+
+&#x20;       id: deployment
+
+&#x20;       uses: actions/deploy-pages@v4
