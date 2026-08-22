@@ -42,7 +42,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
     toggleTheme,
     user,
     logout,
-    switchRoleDemo,
     isAdmin,
     supabaseConnected,
     isCheckingSupabase,
@@ -345,17 +344,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               </div>
 
               <div className="py-1 text-xs">
-                <button
-                  onClick={() => {
-                    switchRoleDemo();
-                    setShowUserDropdown(false);
-                  }}
-                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors"
-                >
-                  <span>Switch Role (Demo)</span>
-                  <span className="text-[10px] font-bold text-blue-600">{isAdmin ? 'To Staff' : 'To Admin'}</span>
-                </button>
-
                 <button
                   onClick={() => {
                     setActiveTab('settings');

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { AppProvider, useApp } from './context/AppContext';
+import { useApp } from './context/AppContext';
+import { useAuth } from './context/AuthContext';
 import { Sidebar } from './components/Sidebar';
 import { TopHeader } from './components/TopHeader';
 import { Toast } from './components/Toast';
@@ -22,32 +23,29 @@ import {
   LayoutDashboard,
   Package,
   Receipt,
-  FileText,
-  Palette,
   Settings as SettingsIcon,
   Sun,
   Moon,
   Store,
   LogIn,
-  UserPlus
+  UserPlus,
+  RefreshCw
 } from 'lucide-react';
 
-const MainAppContent: React.FC = () => {
+export const App: React.FC = () => {
   const {
-    user,
     activeTab,
     setActiveTab,
     settings,
     theme,
     toggleTheme,
     lowStockCount,
-    pendingVerificationEmail
   } = useApp();
 
+  const { user, loading: authLoading } = useAuth();
+
   // Authentication mode for unauthenticated state ('login' | 'register')
-  const [authMode, setAuthMode] = useState<'login' | 'register'>(() => {
-    return pendingVerificationEmail ? 'register' : 'login';
-  });
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
 
   // Animated Landing Transition state triggered right after login
   const [showAnimatedLanding, setShowAnimatedLanding] = useState(false);
@@ -77,7 +75,28 @@ const MainAppContent: React.FC = () => {
     setStockAdjustProductId(productId);
   };
 
-  // Route Protection: If user is not logged in, render the clean Login / Register pages
+  // 1. Loading State: Checking Supabase session
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#F8F9FB] dark:bg-[#0B0F17] flex items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-3 p-8 rounded-3xl bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 shadow-xl">
+          <div className="w-12 h-12 rounded-2xl bg-blue-600/10 text-blue-600 flex items-center justify-center">
+            <RefreshCw className="w-6 h-6 animate-spin" />
+          </div>
+          <div className="text-center">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+              Connecting to Supabase Session
+            </h3>
+            <p className="text-xs text-gray-400 mt-1">
+              Restoring authentication state...
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Unauthenticated State: Render Pure Supabase Login / Register views
   if (!user) {
     return (
       <div className="min-h-screen bg-[#F8F9FB] dark:bg-[#0B0F17] text-[#1A1A1A] dark:text-slate-100 flex flex-col font-sans transition-colors duration-200 antialiased selection:bg-blue-600 selection:text-white">
@@ -94,7 +113,7 @@ const MainAppContent: React.FC = () => {
                 {settings.businessName || 'T R ENTERPRISE'}
               </span>
               <p className="text-[10px] text-gray-500 dark:text-slate-400">
-                Paints & Hardware Portal
+                Paints & Hardware Portal &bull; Supabase Auth
               </p>
             </div>
           </div>
@@ -145,13 +164,12 @@ const MainAppContent: React.FC = () => {
               onLoginSuccess={() => {
                 setShowAnimatedLanding(true);
               }}
-              onOpenVerificationModal={() => setAuthMode('register')}
             />
           ) : (
             <RegisterPage
               onSwitchToLogin={() => setAuthMode('login')}
               onRegisteredSuccess={() => {
-                // Handled in verification step
+                setAuthMode('login');
               }}
             />
           )}
@@ -165,7 +183,7 @@ const MainAppContent: React.FC = () => {
     );
   }
 
-  // 4. Animated Landing Transition Screen after login
+  // 3. Animated Landing Transition Screen after login
   if (showAnimatedLanding) {
     return (
       <AnimatedLandingTransition
@@ -179,7 +197,7 @@ const MainAppContent: React.FC = () => {
     );
   }
 
-  // Authenticated State: Full Portal Application
+  // 4. Authenticated State: Full Portal Application
   return (
     <div className="min-h-screen bg-[#F8F9FB] dark:bg-[#0B0F17] text-[#1A1A1A] dark:text-slate-100 flex font-sans transition-colors duration-200 antialiased selection:bg-blue-600 selection:text-white">
       
@@ -253,7 +271,7 @@ const MainAppContent: React.FC = () => {
                 onClick={() => setIsSupabaseOpen(true)}
                 className="text-blue-600 dark:text-blue-400 hover:underline font-bold"
               >
-                Supabase PostgreSQL Connected
+                Supabase Database
               </button>
             </div>
           </div>
@@ -347,13 +365,5 @@ const MainAppContent: React.FC = () => {
     </div>
   );
 };
-
-export function App() {
-  return (
-    <AppProvider>
-      <MainAppContent />
-    </AppProvider>
-  );
-}
 
 export default App;

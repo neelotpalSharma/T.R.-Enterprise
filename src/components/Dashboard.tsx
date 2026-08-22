@@ -47,11 +47,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onOpenAddProduct, onOpenSt
     lowStockCount,
     setActiveTab,
     settings,
-    supabaseConnected,
-    previousCredentialsCount,
-    deletePreviousCredentials
+    supabaseConnected
   } = useApp();
-  const [isPurging, setIsPurging] = React.useState(false);
 
   // Metrics Calculations
   const totalStockUnits = products.reduce((acc, p) => acc + p.quantity, 0);
@@ -145,45 +142,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onOpenAddProduct, onOpenSt
           </button>
         </div>
       </div>
-
-      {/* Primary Bento Grid Matrix */}
-      {previousCredentialsCount > 0 && (
-        <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-in fade-in">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 shrink-0">
-              <UserX className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="font-extrabold text-amber-900 dark:text-amber-200">
-                Security Notice: {previousCredentialsCount} Previous Owner Credential{previousCredentialsCount > 1 ? 's' : ''} Still Registered
-              </p>
-              <p className="text-amber-700 dark:text-amber-300 mt-0.5">
-                Permanently purge previous owner credentials so that previous accounts cannot log in.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => setActiveTab('settings')}
-              className="px-3.5 py-1.5 rounded-xl font-bold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-amber-200 dark:border-slate-700 hover:bg-amber-100/50"
-            >
-              Review in Settings
-            </button>
-            <button
-              disabled={isPurging}
-              onClick={async () => {
-                setIsPurging(true);
-                await deletePreviousCredentials();
-                setIsPurging(false);
-              }}
-              className="px-3.5 py-1.5 rounded-xl font-bold bg-red-600 hover:bg-red-700 text-white shadow-sm flex items-center gap-1.5"
-            >
-              {isPurging ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-              <span>Purge Now</span>
-            </button>
-          </div>
-        </div>
-      )}
 
       <div className="grid grid-cols-12 gap-6">
         

@@ -5,11 +5,9 @@ export interface User {
   email: string;
   name: string;
   role: Role;
-  is_verified?: boolean;
   avatarUrl?: string;
   phone?: string;
   joinedDate?: string;
-  token?: string;
 }
 
 export interface SentEmailLogItem {

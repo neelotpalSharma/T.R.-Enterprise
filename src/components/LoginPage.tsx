@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
 import {
   Mail,
@@ -10,25 +11,24 @@ import {
   Store,
   RefreshCw,
   X,
-  Send
+  Send,
+  CheckCircle2,
+  KeyRound
 } from 'lucide-react';
-import { getSupabaseClient } from '../lib/supabase';
-import { safeFetchJson, localAuth } from '../services/authClient';
 
 interface LoginPageProps {
   onSwitchToRegister: () => void;
-  onLoginSuccess: () => void;
-  onOpenVerificationModal?: (email: string) => void;
+  onLoginSuccess?: () => void;
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({
   onSwitchToRegister,
   onLoginSuccess,
-  onOpenVerificationModal,
 }) => {
-  const { loginWithJwt, showToast, resendOtp, fetchRecentEmails } = useApp();
+  const { signIn, resetPassword } = useAuth();
+  const { showToast, settings } = useApp();
 
-  // Minimal form fields
+  // Form fields
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -36,8 +36,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   // States
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isUnverified, setIsUnverified] = useState(false);
-  const [unverifiedEmail, setUnverifiedEmail] = useState('');
 
   // Forgot password modal
   const [showForgotModal, setShowForgotModal] = useState(false);
@@ -48,9 +46,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
-    setIsUnverified(false);
 
-    if (!email.trim()) {
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (!cleanEmail) {
       setErrorMessage('Please enter your email address.');
       return;
     }
@@ -63,35 +62,25 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     setIsLoading(true);
 
     try {
-      // Background Supabase auth login if configured
-      const supabase = getSupabaseClient();
-      if (supabase) {
-        try {
-          await supabase.auth.signInWithPassword({
-            email: email.trim().toLowerCase(),
-            password: password,
-          });
-        } catch (supaErr) {
-          console.warn('Supabase auth signin notice:', supaErr);
+      const { error } = await signIn(cleanEmail, password);
+
+      if (error) {
+        if (error.message.includes('Invalid login credentials')) {
+          setErrorMessage('Invalid email or password. Please check your credentials or register.');
+        } else if (error.message.includes('Email not confirmed')) {
+          setErrorMessage('Email address has not been confirmed. Please check your inbox for the Supabase confirmation link.');
+        } else {
+          setErrorMessage(error.message || 'Login failed. Please verify your credentials.');
         }
+        return;
       }
 
-      const res = await loginWithJwt(email.trim().toLowerCase(), password);
-
-      if (res.success) {
-        showToast('Login successful! Redirecting to Portal Hub...', 'success');
+      showToast('Signed in successfully! Welcome to the portal.', 'success');
+      if (onLoginSuccess) {
         onLoginSuccess();
-      } else if (res.isUnverified) {
-        setIsUnverified(true);
-        const blocked = res.email || email.trim().toLowerCase();
-        setUnverifiedEmail(blocked);
-        setErrorMessage('Please verify your email before login.');
-        fetchRecentEmails(blocked);
-      } else {
-        setErrorMessage(res.message || 'Invalid email address or password.');
       }
     } catch (err: any) {
-      setErrorMessage(err.message || 'Network error during login.');
+      setErrorMessage(err.message || 'An unexpected error occurred during sign in.');
     } finally {
       setIsLoading(false);
     }
@@ -106,40 +95,18 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     setResetMessage(null);
 
     try {
-      const res = await safeFetchJson<any>('/api/auth/forgot-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cleanEmail }),
-      });
-
-      if (!res.isHtmlOrUnavailable && res.data) {
-        setResetMessage(res.data.message || 'Password reset link sent to your email.');
-        showToast(res.data.message || 'Password reset instructions dispatched.', 'info');
-        fetchRecentEmails(cleanEmail);
-        setIsSendingReset(false);
-        return;
+      const { error } = await resetPassword(cleanEmail);
+      if (error) {
+        setResetMessage(`Failed to send reset link: ${error.message}`);
+        showToast(error.message, 'error');
+      } else {
+        setResetMessage(`Password reset link has been dispatched to ${cleanEmail}`);
+        showToast('Password reset link sent to your email', 'success');
       }
-    } catch {
-      // Fallback
-    }
-
-    // Static fallback: generate simulation
-    const simulatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
-    const simulatedTok = 'rst_' + Math.random().toString(36).substring(2);
-    localAuth.createSimulatedEmail(cleanEmail, cleanEmail.split('@')[0], simulatedOtp, simulatedTok);
-    fetchRecentEmails(cleanEmail);
-
-    setResetMessage('Password reset link sent to your email.');
-    showToast('Password reset instructions dispatched to your email.', 'info');
-    setIsSendingReset(false);
-  };
-
-  const handleResendForUnverified = async () => {
-    if (!unverifiedEmail) return;
-    const res = await resendOtp(unverifiedEmail);
-    if (res.success) {
-      showToast('Verification instructions resent to your email!', 'info');
-      fetchRecentEmails(unverifiedEmail);
+    } catch (err: any) {
+      setResetMessage(err?.message || 'Failed to dispatch reset instructions.');
+    } finally {
+      setIsSendingReset(false);
     }
   };
 
@@ -154,7 +121,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           Sign In to Portal
         </h1>
         <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-          T R Enterprise &bull; Berger Paints & Hardware Store
+          {settings.businessName || 'T R ENTERPRISE'} &bull; Supabase Secure Access
         </p>
       </div>
 
@@ -166,26 +133,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
             <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
             <div className="flex-1">
               <span className="font-bold">{errorMessage}</span>
-              {isUnverified && (
-                <div className="mt-2 pt-2 border-t border-red-200/60 dark:border-red-800/60 flex items-center justify-between gap-2">
-                  <span className="text-[11px] text-red-600 dark:text-red-300">
-                    Account not activated yet.
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (onOpenVerificationModal) {
-                        onOpenVerificationModal(unverifiedEmail);
-                      } else {
-                        handleResendForUnverified();
-                      }
-                    }}
-                    className="text-[11px] font-bold text-blue-600 dark:text-blue-400 underline hover:text-blue-800"
-                  >
-                    Verify Email Now &rarr;
-                  </button>
-                </div>
-              )}
             </div>
           </div>
         )}
@@ -264,7 +211,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
             ) : (
               <ArrowRight className="w-4 h-4" />
             )}
-            <span>Sign In & Continue to Portal</span>
+            <span>Sign In to Portal</span>
           </button>
 
           {/* Switch to Register footer */}
@@ -276,7 +223,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                 onClick={onSwitchToRegister}
                 className="font-bold text-blue-600 dark:text-blue-400 hover:underline"
               >
-                Create Account (Register)
+                Register with Supabase
               </button>
             </p>
           </div>
@@ -291,7 +238,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                <Lock className="w-5 h-5 text-blue-600" />
+                <KeyRound className="w-5 h-5 text-blue-600" />
                 <span>Reset Password</span>
               </h3>
               <button
@@ -306,7 +253,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
             </div>
 
             <p className="text-xs text-gray-500 dark:text-slate-400">
-              Enter your registered email address. We'll send you instructions to reset your password.
+              Enter your registered email address. Supabase Auth will send you a secure password reset link.
             </p>
 
             {resetMessage && (

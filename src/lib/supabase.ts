@@ -1,6 +1,6 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient, User as SupabaseUser, Session } from '@supabase/supabase-js';
 
-// Read from env or localStorage if user configured dynamically in app settings
+// Read from env or local storage project config fallback
 export const getSupabaseEnv = () => {
   const metaEnv = (import.meta as unknown as { env?: Record<string, string> }).env || {};
   const url =
@@ -28,8 +28,10 @@ export const getSupabaseClient = (): SupabaseClient | null => {
       supabaseInstance = createClient(url, anonKey, {
         auth: {
           persistSession: true,
-          autoRefreshToken: true
-        }
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+          storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+        },
       });
     } catch (err) {
       console.warn('Failed to initialize Supabase client:', err);
@@ -38,6 +40,42 @@ export const getSupabaseClient = (): SupabaseClient | null => {
   }
   return supabaseInstance;
 };
+
+// Direct export for standard Supabase usage with dynamic routing fallback
+export const supabase: SupabaseClient = new Proxy({} as any, {
+  get(_target, prop) {
+    const client = getSupabaseClient();
+    if (client) {
+      const val = (client as any)[prop];
+      if (typeof val === 'function') {
+        return val.bind(client);
+      }
+      return val;
+    }
+    // Safe fallbacks if Supabase is unconfigured
+    if (prop === 'auth') {
+      return {
+        getSession: async () => ({ data: { session: null }, error: null }),
+        onAuthStateChange: (_cb: any) => ({ data: { subscription: { unsubscribe: () => {} } } }),
+        signInWithPassword: async () => ({ data: null, error: new Error('Supabase credentials not configured. Please enter your Supabase URL & Anon Key in Settings.') }),
+        signUp: async () => ({ data: null, error: new Error('Supabase credentials not configured. Please enter your Supabase URL & Anon Key in Settings.') }),
+        signOut: async () => ({ error: null }),
+        resetPasswordForEmail: async () => ({ data: null, error: new Error('Supabase credentials not configured.') }),
+        getUser: async () => ({ data: { user: null }, error: null }),
+      };
+    }
+    if (prop === 'from') {
+      return () => ({
+        select: () => Promise.resolve({ data: [], error: null }),
+        insert: () => Promise.resolve({ data: null, error: null }),
+        upsert: () => Promise.resolve({ data: null, error: null }),
+        update: () => ({ eq: () => Promise.resolve({ data: null, error: null }) }),
+        delete: () => ({ eq: () => Promise.resolve({ data: null, error: null }) }),
+      });
+    }
+    return undefined;
+  },
+});
 
 export const resetSupabaseClient = (url?: string, anonKey?: string) => {
   if (url && anonKey) {
@@ -51,8 +89,10 @@ export const resetSupabaseClient = (url?: string, anonKey?: string) => {
       supabaseInstance = createClient(cleanUrl, cleanKey, {
         auth: {
           persistSession: true,
-          autoRefreshToken: true
-        }
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+          storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+        },
       });
       return true;
     } catch (e) {
@@ -75,19 +115,18 @@ export const testSupabaseConnection = async (): Promise<{ success: boolean; mess
   if (!client) {
     return {
       success: false,
-      message: 'Supabase URL or Anon Key is missing. Please configure credentials.'
+      message: 'Supabase URL or Anon Key is missing. Please configure credentials.',
     };
   }
 
   try {
     const { error } = await client.from('products').select('count', { count: 'exact', head: true });
     if (error) {
-      // If table doesn't exist yet, it's connected but schema needs to be run
       if (error.code === '42P01' || error.message?.includes('does not exist') || error.message?.includes('relation "public.products" does not exist')) {
         return {
           success: true,
           tablesExist: false,
-          message: 'Connected to Supabase project! (PostgreSQL tables not found yet - copy the SQL schema script below and run it in your Supabase SQL Editor).'
+          message: 'Connected to Supabase project! (PostgreSQL tables not found yet - copy the SQL schema script below and run it in your Supabase SQL Editor).',
         };
       }
       return { success: false, message: `Supabase returned: ${error.message}` };
@@ -95,7 +134,7 @@ export const testSupabaseConnection = async (): Promise<{ success: boolean; mess
     return {
       success: true,
       tablesExist: true,
-      message: 'Successfully connected and verified Supabase PostgreSQL cloud tables!'
+      message: 'Successfully connected and verified Supabase PostgreSQL cloud tables!',
     };
   } catch (err: any) {
     return { success: false, message: err.message || 'Connection failed. Check network or CORS.' };

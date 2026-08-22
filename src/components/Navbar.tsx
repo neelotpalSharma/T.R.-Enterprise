@@ -34,7 +34,6 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenAuthModal, onOpenSupabaseM
     toggleTheme,
     user,
     logout,
-    switchRoleDemo,
     lowStockCount,
     supabaseConnected,
     isCheckingSupabase,

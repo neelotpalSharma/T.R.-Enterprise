@@ -43,7 +43,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setActiveTab,
     user,
     logout,
-    switchRoleDemo,
     isAdmin,
     supabaseConnected,
     lowStockCount,
@@ -271,14 +270,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }`}>
                     {isAdmin ? '👑 Owner' : '🧑‍💼 Staff'}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => switchRoleDemo()}
-                    className="text-[9px] text-gray-400 hover:text-blue-600 underline font-medium"
-                    title="Switch Demo Role"
-                  >
-                    (switch)
-                  </button>
                 </div>
               </div>
             )}

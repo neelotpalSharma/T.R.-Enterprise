@@ -106,7 +106,7 @@ export const BillingPOS: React.FC = () => {
         unitPrice: product.unitPrice,
         quantity: 1,
         discountPercent: 0,
-        taxPercent: settings.taxRate || settings.defaultTaxPercent || 18,
+        taxPercent: settings.defaultTaxPercent || 18,
         total: product.unitPrice
       };
       setCartItems([...cartItems, newItem]);
@@ -176,7 +176,7 @@ export const BillingPOS: React.FC = () => {
   const totalDiscountAmount = itemsTotalDiscount + overallDiscountAmount;
   const taxableAmount = Math.max(0, discountedItemsTotal - overallDiscountAmount);
   
-  const taxPercent = settings.taxRate || settings.defaultTaxPercent || 18;
+  const taxPercent = settings.defaultTaxPercent || 18;
   const taxAmount = (taxableAmount * taxPercent) / 100;
   const grandTotal = Math.round(taxableAmount + taxAmount);
 

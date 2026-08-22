@@ -2,7 +2,6 @@ import express from "express";
 import path from "path";
 import cors from "cors";
 import { createServer as createViteServer } from "vite";
-import { authRouter } from "./server/auth";
 
 async function startServer() {
   const app = express();
@@ -12,25 +11,13 @@ async function startServer() {
   app.use(cors());
   app.use(express.json());
 
-  // Mount Auth & Backend API Routes FIRST
-  app.use("/api/auth", authRouter);
-
   // Health check endpoint
-  app.get("/api/health", (req, res) => {
+  app.get("/api/health", (_req, res) => {
     res.json({
       status: "healthy",
-      service: "T R Enterprise Secure Auth & POS API",
+      service: "T R Enterprise Inventory & Billing Portal",
+      auth: "Supabase Authentication (Single Source of Truth)",
       timestamp: new Date().toISOString(),
-      authEndpoints: [
-        "POST /api/auth/register",
-        "POST /api/auth/verify-otp",
-        "GET /api/auth/verify-token",
-        "POST /api/auth/resend-verification",
-        "POST /api/auth/login",
-        "GET /api/auth/me",
-        "GET /api/auth/recent-emails",
-        "GET /api/auth/schema"
-      ]
     });
   });
 
@@ -44,7 +31,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get("*", (req, res) => {
+    app.get("*", (_req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
